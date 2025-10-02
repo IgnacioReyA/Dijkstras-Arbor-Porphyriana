@@ -1,0 +1,3 @@
+numpy>=1.22
+# Optional for richer PLY/PCD IO (auto-detected). Uncomment to install.
+# open3d>=0.18
