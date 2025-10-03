@@ -365,6 +365,7 @@ def parse_args(argv=None):
 	p.add_argument('-i','--input', required=True, help='Input point cloud file (csv, ply, xyz, pcd, obj)')
 	p.add_argument('-o','--output', required=True, help='Output file (csv or ply)')
 	p.add_argument('-v','--voxel', type=float, default=0.0, help='XY voxel size (meters). 0 disables downsampling.')
+	p.add_argument('--target-n', type=int, default=None, help='If set, ignore --voxel and adaptively choose voxel size to approach this point count (XY only).')
 	p.add_argument('--z-min', type=float, default=None, help='Z minimum clip')
 	p.add_argument('--z-max', type=float, default=None, help='Z maximum clip')
 	p.add_argument('--stat-z', type=float, default=0.0, help='Z statistical filter k*std (0 disables)')
@@ -389,11 +390,43 @@ def main(argv=None):
 	if args.stat_3d > 0:
 		pc = statistical_radius(pc, args.stat_3d)
 	after_filters = len(pc.xyz)
-	if args.voxel > 0:
-		pc = voxel_downsample_xy(pc, args.voxel)
+	chosen_voxel = args.voxel
+	if args.target_n is not None and args.target_n > 0 and after_filters > 0:
+		# Adaptive binary search over voxel size in XY bounding box extents.
+		xy = pc.xyz[:, :2]
+		min_xy = xy.min(axis=0)
+		max_xy = xy.max(axis=0)
+		span = max(max_xy - min_xy)
+		# lower bound near zero (but not zero to avoid infinite loops), upper bound half the max span
+		lo = span / 1e6 or 1e-6
+		hi = max(span * 0.5, lo * 10)
+		target = args.target_n
+		best_pc = pc
+		best_diff = float('inf')
+		# limit iterations to avoid long runtimes
+		for _ in range(25):
+			mid = math.sqrt(lo * hi)  # geometric mean for smoother convergence
+			test_pc = voxel_downsample_xy(pc, mid)
+			n = len(test_pc.xyz)
+			diff = abs(n - target)
+			if diff < best_diff:
+				best_diff = diff
+				best_pc = test_pc
+				chosen_voxel = mid
+			if n > target:  # too many points -> increase voxel size
+				lo = mid
+			else:  # too few points -> decrease voxel size
+				hi = mid
+			# early break if within 1% or 50 points
+			if diff / target < 0.01 or diff < 50:
+				break
+		pc = best_pc
+	else:
+		if chosen_voxel > 0:
+			pc = voxel_downsample_xy(pc, chosen_voxel)
 	after_voxel = len(pc.xyz)
 	save_point_cloud(pc, args.output)
-	print(f'Loaded {before} points -> after filters {after_filters} -> after voxel {after_voxel}. Saved to {args.output}')
+	print(f'Loaded {before} points -> after filters {after_filters} -> after voxel {after_voxel} (voxel={chosen_voxel:.6f}). Saved to {args.output}')
 
 
 if __name__ == '__main__':
