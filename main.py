@@ -72,3 +72,12 @@ if __name__ == "__main__":
     save_tin(args.input, args.output_base)
     print("\n--- Testing geometric utilities ---")
     test_tiny_utilities()
+    
+    print("\n--- Testing geometric search queries ---")
+    try:
+        from geometricSearchQueries import test_geometric_search
+        test_geometric_search()
+    except ImportError as e:
+        print(f"Could not import geometric search: {e}")
+    except Exception as e:
+        print(f"Error testing geometric search: {e}")
